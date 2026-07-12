@@ -3,34 +3,41 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>단어 학습 앱</title>
+<title>워드라이너 · 한영 단어 학습</title>
 <style>
   :root{
-    --bg:#f4f5fb;
-    --surface:#ffffff;
-    --surface-2:#f0f1f8;
-    --border:#e3e5f0;
-    --text:#1c1d2b;
-    --text-dim:#6b6d84;
-    --primary:#5b5fef;
-    --primary-dim:#eceaff;
-    --accent:#ff6b81;
-    --accent-dim:#ffe3e8;
-    --good:#22b573;
-    --good-dim:#e1f8ee;
-    --bad:#ef4b5f;
-    --bad-dim:#fde6e9;
-    --p1:#5b5fef;
-    --p1-dim:#eceaff;
-    --p2:#ff8a3d;
-    --p2-dim:#fff1e2;
+    --bg:#fdfaf1;
+    --surface:#fffefb;
+    --surface-2:#fdf6e0;
+    --border:#efe2ba;
+    --text:#2a2620;
+    --text-dim:#8c8368;
+    --primary:#2f6fed;
+    --primary-dim:#e8f0ff;
+    --accent:#ff5d8f;
+    --accent-dim:#ffe3ee;
+    --good:#1fa971;
+    --good-dim:#e2f8ee;
+    --bad:#e0435c;
+    --bad-dim:#fde5ea;
+    --p1:#2f6fed;
+    --p1-dim:#e8f0ff;
+    --p2:#ff5d8f;
+    --p2-dim:#ffe3ee;
+    --hl-yellow:#fff06b;
+    --hl-yellow-2:#ffe98a;
+    --hl-pink:#ffb3cf;
+    --hl-blue:#a8d4ff;
+    --hl-mint:#a0eccb;
     --radius:16px;
-    --shadow:0 4px 20px rgba(30,30,60,0.08);
+    --shadow:0 4px 18px rgba(60,45,10,0.07);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
-    background:var(--bg);
+    background:
+      repeating-linear-gradient(to bottom, transparent 0 27px, rgba(60,45,10,0.05) 27px 28px),
+      var(--bg);
     color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Segoe UI",Roboto,sans-serif;
     min-height:100vh;
@@ -42,17 +49,21 @@
 
   header.topbar{
     position:sticky;top:0;z-index:50;
-    background:rgba(244,245,251,0.92);
+    background:rgba(253,250,241,0.92);
     backdrop-filter:blur(8px);
     border-bottom:1px solid var(--border);
     padding:10px 16px 0;
   }
   .brand{
-    display:flex;align-items:center;gap:8px;
-    font-weight:800;font-size:17px;padding:2px 4px 10px;
-    color:var(--primary);
+    display:flex;align-items:baseline;gap:8px;
+    font-weight:800;font-size:17px;padding:2px 4px 2px;
+    color:var(--text);
   }
-  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);}
+  .brand .dot{
+    display:inline-block;width:14px;height:14px;border-radius:3px;
+    background:var(--hl-yellow);transform:rotate(-8deg);
+  }
+  .brand-sub{font-size:11.5px;font-weight:500;color:var(--text-dim);padding:0 4px 10px;margin-top:-4px;}
   nav.tabs{
     display:flex;gap:4px;
     overflow-x:auto;
@@ -67,10 +78,16 @@
     color:var(--text-dim);
     border-bottom:3px solid transparent;
     white-space:nowrap;
+    border-radius:4px 4px 0 0;
   }
   nav.tabs button.active{
-    color:var(--primary);
-    border-bottom-color:var(--primary);
+    color:var(--text);
+    font-weight:800;
+    border-bottom-color:transparent;
+    background-image:linear-gradient(120deg, var(--hl-yellow) 0%, var(--hl-yellow) 100%);
+    background-repeat:no-repeat;
+    background-size:100% 38%;
+    background-position:0 76%;
   }
 
   main{flex:1;width:100%;max-width:880px;margin:0 auto;padding:18px 16px 60px;}
@@ -144,13 +161,21 @@
     border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;
     padding:24px;text-align:center;box-shadow:var(--shadow);
   }
-  .face-front{background:linear-gradient(145deg,var(--primary),#8b8ef9);color:#fff;}
+  .face-front{background:var(--surface);color:var(--text);border:1px solid var(--border);}
   .face-back{background:var(--surface);transform:rotateY(180deg);border:1px solid var(--border);}
-  .face-tag{font-size:12px;letter-spacing:.06em;opacity:.85;margin-bottom:10px;text-transform:uppercase;}
-  .face-word{font-size:32px;font-weight:800;word-break:break-word;}
-  .face-word-ko{font-size:26px;font-weight:800;color:var(--primary);margin-bottom:10px;}
+  .face-tag{font-size:12px;letter-spacing:.06em;color:var(--text-dim);margin-bottom:14px;text-transform:uppercase;font-weight:700;}
+  .face-word{
+    font-size:32px;font-weight:800;word-break:break-word;display:inline-block;padding:0 6px;
+    background-image:linear-gradient(120deg, var(--hl-yellow) 0%, var(--hl-yellow) 100%);
+    background-repeat:no-repeat;background-size:100% 44%;background-position:0 82%;
+  }
+  .face-word-ko{
+    font-size:26px;font-weight:800;color:var(--text);margin-bottom:10px;display:inline-block;padding:0 6px;
+    background-image:linear-gradient(120deg, var(--hl-pink) 0%, var(--hl-pink) 100%);
+    background-repeat:no-repeat;background-size:100% 44%;background-position:0 82%;
+  }
   .face-ex{font-size:14px;color:var(--text-dim);margin-top:14px;line-height:1.5;}
-  .face-hint{position:absolute;bottom:12px;font-size:11px;opacity:.7;}
+  .face-hint{position:absolute;bottom:12px;font-size:11px;color:var(--text-dim);opacity:.8;}
   .study-controls{display:flex;justify-content:center;gap:10px;margin-top:18px;flex-wrap:wrap;}
   .study-toolbar{display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px;}
 
@@ -169,12 +194,16 @@
   .quiz-progress-fill{height:100%;background:var(--primary);transition:width .3s ease;}
   .quiz-top{display:flex;justify-content:space-between;font-size:13px;color:var(--text-dim);margin-bottom:8px;}
   .quiz-prompt-box{
-    background:linear-gradient(145deg,var(--primary),#8b8ef9);
-    color:#fff;border-radius:18px;padding:30px 20px;text-align:center;margin-bottom:18px;
+    background:var(--surface);border:1.5px dashed var(--border);
+    color:var(--text);border-radius:18px;padding:30px 20px;text-align:center;margin-bottom:18px;
   }
-  .quiz-prompt-tag{font-size:12px;opacity:.85;margin-bottom:8px;letter-spacing:.05em;}
-  .quiz-prompt-word{font-size:28px;font-weight:800;}
-  .quiz-prompt-ex{font-size:13px;opacity:.9;margin-top:10px;}
+  .quiz-prompt-tag{font-size:12px;color:var(--text-dim);margin-bottom:10px;letter-spacing:.05em;font-weight:700;text-transform:uppercase;}
+  .quiz-prompt-word{
+    font-size:28px;font-weight:800;display:inline-block;padding:0 6px;
+    background-image:linear-gradient(120deg, var(--hl-blue) 0%, var(--hl-blue) 100%);
+    background-repeat:no-repeat;background-size:100% 42%;background-position:0 80%;
+  }
+  .quiz-prompt-ex{font-size:13px;color:var(--text-dim);margin-top:12px;}
   .quiz-options{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .quiz-opt{
     border:2px solid var(--border);background:var(--surface);
@@ -248,8 +277,8 @@
     display:flex;align-items:center;justify-content:center;text-align:center;padding:4px;
   }
   .memo-back{
-    background:linear-gradient(145deg,var(--primary),#8b8ef9);
-    font-size:16px;color:#fff;font-weight:800;
+    background:linear-gradient(145deg,var(--hl-yellow),var(--hl-yellow-2));
+    font-size:16px;color:#3a3218;font-weight:800;
   }
   .memo-front{
     background:var(--surface-2);border:1px solid var(--border);
@@ -289,7 +318,8 @@
 <body>
 
 <header class="topbar">
-  <div class="brand"><span class="dot"></span>단어 학습 앱</div>
+  <div class="brand"><span class="dot"></span>워드라이너</div>
+  <div class="brand-sub">형광펜으로 콕 짚은 오늘의 영어 단어</div>
   <nav class="tabs">
     <button data-screen="data" class="active">📥 단어 가져오기</button>
     <button data-screen="study">📖 단어장</button>
