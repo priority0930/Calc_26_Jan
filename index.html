@@ -479,13 +479,13 @@ const USERS = [
   { id:'seunggyu', name:'승규', mascot:'hamrang', theme:'hamrang-theme' },
   { id:'sujin',    name:'수진', mascot:'chorong', theme:'chorong-theme' }
 ];
-const STORAGE_KEY = 'coupleExerciseLog_v1';
+const STORAGE_KEY = 'coupleExerciseLog_v2';
 
 function loadStore(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : { weeks:{} };
-  }catch(e){ return { weeks:{} }; }
+    return raw ? JSON.parse(raw) : { days:{} };
+  }catch(e){ return { days:{} }; }
 }
 function saveStore(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
@@ -494,12 +494,52 @@ function saveStore(){
 let store = loadStore();
 
 let toastTimer = null;
-function showToast(){
+function showToast(msg){
   const t = document.getElementById('toast');
-  t.textContent = fbReady ? '☁️ 서로 동기화됐어요' : '💾 이 기기에만 저장됐어요';
+  t.textContent = msg || (fbReady ? '☁️ 서로 동기화됐어요' : '💾 이 기기에만 저장됐어요');
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>t.classList.remove('show'), 1200);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), msg ? 3000 : 1200);
+}
+function showSyncError(){
+  showToast('⚠️ 동기화 실패 - Firebase 규칙을 확인해주세요');
+}
+
+/* ---------- date helpers (매일을 정확한 날짜로 키를 잡아 요일/주 경계 문제를 없앰) ---------- */
+function fmtKey(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function fmtShort(d){
+  return (d.getMonth()+1)+'.'+d.getDate();
+}
+function todayDateOnly(){
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  return d;
+}
+function keyToDate(key){ return new Date(key+'T00:00:00'); }
+
+let refDate = todayDateOnly();          // 현재 보이는 7일 창의 가장 최근(오른쪽 끝) 날짜
+let selectedDateKey = fmtKey(refDate);  // 현재 선택된 날짜
+
+function windowDates(){
+  const arr = [];
+  for(let i=6;i>=0;i--){
+    const d = new Date(refDate);
+    d.setDate(d.getDate()-i);
+    arr.push(d);
+  }
+  return arr;
+}
+
+function ensureDayUser(dateKey, userId){
+  if(!store.days[dateKey]) store.days[dateKey] = {};
+  if(!store.days[dateKey][userId]){
+    store.days[dateKey][userId] = {
+      type:null, plan:'', items:[], result:null, score:null, comment:'', comments:[]
+    };
+  }
+  return store.days[dateKey][userId];
 }
 
 /* ============================================================
@@ -514,7 +554,8 @@ const firebaseConfig = {
   messagingSenderId: "321418517468",
   appId: "1:321418517468:web:d38cecc39f821c849c8d19"
 };
-const FB_ROOT = 'coupleExerciseLog/weeks';
+const FB_ROOT = 'coupleExerciseLog/days';
+const FB_ROOT_OLD = 'coupleExerciseLog/weeks';
 let fbDb = null, fbReady = false;
 if(typeof firebase !== 'undefined'){
   try{
@@ -524,12 +565,22 @@ if(typeof firebase !== 'undefined'){
   }catch(e){ console.warn('Firebase 초기화 실패, 이 기기에만 저장됩니다.', e); }
 }
 
+/* 최근에 내가 직접 수정한 (dateKey|uid) 은 짧은 시간 동안 원격 스냅샷으로 덮어쓰지 않는다.
+   (쓰기 반영이 아직 서버에 도달하기 전에 예전 값이 실시간 리스너로 들어와 입력이 사라지는 문제 방지) */
+const recentLocalWrites = {};
+const RECENT_GUARD_MS = 6000;
+
 function commit(uid){
   saveStore();
+  recentLocalWrites[selectedDateKey+'|'+uid] = Date.now();
   if(!fbReady) return;
-  const wk = currentWeekKey();
-  const node = ((store.weeks[wk]||{})[selectedDayIdx]||{})[uid];
-  if(node) fbDb.ref(FB_ROOT+'/'+wk+'/'+selectedDayIdx+'/'+uid).set(node);
+  const node = (store.days[selectedDateKey]||{})[uid];
+  if(node){
+    fbDb.ref(FB_ROOT+'/'+selectedDateKey+'/'+uid).set(node).catch(err=>{
+      console.error('Firebase 저장 실패', err);
+      showSyncError();
+    });
+  }
 }
 
 function isTypingInCards(){
@@ -538,19 +589,76 @@ function isTypingInCards(){
   return (ae.tagName==='TEXTAREA'||ae.tagName==='INPUT') && !!ae.closest('#cards');
 }
 
+/* 원격 스냅샷을 로컬 store에 병합. 방금 내가 편집한 항목은 보호한다. */
+function applyRemoteDays(remote){
+  remote = remote || {};
+  const now = Date.now();
+  const merged = {};
+  Object.keys(remote).forEach(dateKey=>{
+    merged[dateKey] = {};
+    const dayObj = remote[dateKey] || {};
+    Object.keys(dayObj).forEach(uid=>{
+      const key = dateKey+'|'+uid;
+      const guarded = recentLocalWrites[key] && (now - recentLocalWrites[key] < RECENT_GUARD_MS);
+      if(guarded && store.days[dateKey] && store.days[dateKey][uid]){
+        merged[dateKey][uid] = store.days[dateKey][uid];
+      } else {
+        merged[dateKey][uid] = dayObj[uid];
+      }
+    });
+  });
+  // 아직 서버에 반영되지 않았지만 최근에 로컬에서 만든 항목(원격에 아예 없는 경우)도 보존
+  Object.keys(recentLocalWrites).forEach(key=>{
+    if(now - recentLocalWrites[key] >= RECENT_GUARD_MS) return;
+    const idx = key.indexOf('|');
+    const dateKey = key.slice(0,idx), uid = key.slice(idx+1);
+    if(store.days[dateKey] && store.days[dateKey][uid]){
+      merged[dateKey] = merged[dateKey] || {};
+      if(!merged[dateKey][uid]) merged[dateKey][uid] = store.days[dateKey][uid];
+    }
+  });
+  store.days = merged;
+}
+
+function migrateOldSchemaIfNeeded(){
+  return fbDb.ref(FB_ROOT_OLD).once('value').then(snap=>{
+    const oldData = snap.val();
+    if(!oldData) return;
+    return fbDb.ref(FB_ROOT).once('value').then(newSnap=>{
+      if(newSnap.val()) return; // 새 경로에 이미 데이터가 있으면 건드리지 않음
+      const migrated = {};
+      Object.keys(oldData).forEach(weekKey=>{
+        const sunday = keyToDate(weekKey);
+        const dayObj = oldData[weekKey] || {};
+        Object.keys(dayObj).forEach(dayIdxStr=>{
+          const dayIdx = parseInt(dayIdxStr,10);
+          if(isNaN(dayIdx) || !dayObj[dayIdxStr]) return;
+          const actualDate = new Date(sunday);
+          actualDate.setDate(actualDate.getDate()+dayIdx);
+          const dateKey = fmtKey(actualDate);
+          migrated[dateKey] = Object.assign({}, migrated[dateKey], dayObj[dayIdxStr]);
+        });
+      });
+      if(Object.keys(migrated).length) return fbDb.ref(FB_ROOT).set(migrated);
+    });
+  }).catch(e=> console.warn('구버전 데이터 이전 실패', e));
+}
+
 function initFirebaseSync(){
   if(!fbReady) return;
-  fbDb.ref(FB_ROOT).once('value').then(snap=>{
+  migrateOldSchemaIfNeeded().then(()=>{
+    return fbDb.ref(FB_ROOT).once('value');
+  }).then(snap=>{
     const remote = snap.val();
-    if(!remote && store.weeks && Object.keys(store.weeks).length){
-      fbDb.ref(FB_ROOT).set(store.weeks);
+    if(!remote && store.days && Object.keys(store.days).length){
+      fbDb.ref(FB_ROOT).set(store.days).catch(err=>{ console.error(err); showSyncError(); });
     }
     fbDb.ref(FB_ROOT).on('value', s=>{
-      store.weeks = s.val() || {};
+      applyRemoteDays(s.val());
       localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
       renderDayTabs();
       if(!isTypingInCards()) renderCards();
-    });
+    }, err=>{ console.error('Firebase 리스너 오류', err); showSyncError(); });
   }).catch(e=> console.warn('Firebase 동기화 오류', e));
 }
 
@@ -572,40 +680,6 @@ function updateIdentityChip(){
   const u = USERS.find(x=>x.id===id);
   document.getElementById('identityChip').textContent = u ? ('나: '+u.name+' 🔄 바꾸기') : '나는 누구예요? 👆 눌러서 선택';
 }
-
-/* week helpers: week starts Sunday */
-function getSunday(d){
-  const nd = new Date(d);
-  nd.setHours(0,0,0,0);
-  nd.setDate(nd.getDate() - nd.getDay());
-  return nd;
-}
-function fmtKey(d){
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-}
-function fmtShort(d){
-  return (d.getMonth()+1)+'.'+d.getDate();
-}
-let weekOffset = 0;
-function currentWeekStart(){
-  const base = getSunday(new Date());
-  base.setDate(base.getDate() + weekOffset*7);
-  return base;
-}
-function currentWeekKey(){ return fmtKey(currentWeekStart()); }
-
-function ensureDayUser(weekKey, dayIdx, userId){
-  if(!store.weeks[weekKey]) store.weeks[weekKey] = {};
-  if(!store.weeks[weekKey][dayIdx]) store.weeks[weekKey][dayIdx] = {};
-  if(!store.weeks[weekKey][dayIdx][userId]){
-    store.weeks[weekKey][dayIdx][userId] = {
-      type:null, plan:'', items:[], result:null, score:null, comment:'', comments:[]
-    };
-  }
-  return store.weeks[weekKey][dayIdx][userId];
-}
-
-let selectedDayIdx = new Date().getDay();
 
 /* ============================================================
    ENCYCLOPEDIA DATA
@@ -768,16 +842,17 @@ const EXERCISES = {
    RENDER: WEEK NAV / DAY TABS
 ============================================================ */
 function renderWeekNav(){
-  const start = currentWeekStart();
-  const end = new Date(start); end.setDate(end.getDate()+6);
-  const tag = weekOffset===0 ? '이번주' : (weekOffset>0 ? weekOffset+'주 후' : Math.abs(weekOffset)+'주 전');
+  const dates = windowDates();
+  const start = dates[0], end = dates[6];
+  const today = todayDateOnly();
+  const diffDays = Math.round((today - refDate)/86400000);
+  const tag = diffDays===0 ? '오늘까지 최근 7일' : (diffDays+'일 전 기준');
   document.getElementById('weekLabel').textContent =
     start.getFullYear()+'.'+fmtShort(start)+' ~ '+fmtShort(end)+' ('+tag+')';
 }
 
-function dayCompletionStates(dayIdx){
-  const wk = currentWeekKey();
-  const dayData = (store.weeks[wk]||{})[dayIdx] || {};
+function dayCompletionStates(dateKey){
+  const dayData = store.days[dateKey] || {};
   return USERS.map(u=>{
     const ud = dayData[u.id];
     if(!ud) return 'none';
@@ -791,16 +866,16 @@ function dayCompletionStates(dayIdx){
 function renderDayTabs(){
   const wrap = document.getElementById('dayTabs');
   wrap.innerHTML = '';
-  const start = currentWeekStart();
-  DAYS.forEach((d,idx)=>{
-    const date = new Date(start); date.setDate(date.getDate()+idx);
+  windowDates().forEach(date=>{
+    const dateKey = fmtKey(date);
+    const wd = date.getDay();
     const el = document.createElement('div');
-    el.className = 'day-tab'+(idx===selectedDayIdx?' active':'')+(idx===0?' sun':(idx===6?' sat':''));
-    const states = dayCompletionStates(idx);
-    el.innerHTML = `<div class="dname">${d}</div>
+    el.className = 'day-tab'+(dateKey===selectedDateKey?' active':'')+(wd===0?' sun':(wd===6?' sat':''));
+    const states = dayCompletionStates(dateKey);
+    el.innerHTML = `<div class="dname">${DAYS[wd]}</div>
       <div class="dsub">${fmtShort(date)}</div>
       <div class="dots">${states.map(s=>`<span class="dot ${s!=='none'?s:''}"></span>`).join('')}</div>`;
-    el.onclick = ()=>{ selectedDayIdx = idx; renderDayTabs(); renderCards(); };
+    el.onclick = ()=>{ selectedDateKey = dateKey; renderDayTabs(); renderCards(); };
     wrap.appendChild(el);
   });
 }
@@ -811,9 +886,8 @@ function renderDayTabs(){
 function renderCards(){
   const wrap = document.getElementById('cards');
   wrap.innerHTML = '';
-  const wk = currentWeekKey();
   USERS.forEach(u=>{
-    const ud = ensureDayUser(wk, selectedDayIdx, u.id);
+    const ud = ensureDayUser(selectedDateKey, u.id);
     wrap.appendChild(buildCard(u, ud));
   });
 }
@@ -1136,14 +1210,22 @@ document.getElementById('exSearch').oninput = (e)=> renderModalBody(e.target.val
    WEEK NAV EVENTS
 ============================================================ */
 function gotoDate(date){
-  const targetSunday = getSunday(date);
-  const thisSunday = getSunday(new Date());
-  weekOffset = Math.round((targetSunday - thisSunday) / (7*24*3600*1000));
-  selectedDayIdx = date.getDay();
+  refDate = new Date(date);
+  refDate.setHours(0,0,0,0);
+  selectedDateKey = fmtKey(refDate);
   renderWeekNav(); renderDayTabs(); renderCards();
 }
-document.getElementById('prevWeek').onclick = ()=>{ weekOffset--; renderWeekNav(); renderDayTabs(); renderCards(); };
-document.getElementById('nextWeek').onclick = ()=>{ weekOffset++; renderWeekNav(); renderDayTabs(); renderCards(); };
+function shiftWindow(deltaDays){
+  const selDate = keyToDate(selectedDateKey);
+  const offsetFromRef = Math.round((refDate - selDate)/86400000); // 0~6, 창 안에서 선택된 날짜의 상대 위치
+  refDate.setDate(refDate.getDate()+deltaDays);
+  const newSel = new Date(refDate);
+  newSel.setDate(newSel.getDate()-offsetFromRef);
+  selectedDateKey = fmtKey(newSel);
+  renderWeekNav(); renderDayTabs(); renderCards();
+}
+document.getElementById('prevWeek').onclick = ()=> shiftWindow(-7);
+document.getElementById('nextWeek').onclick = ()=> shiftWindow(7);
 document.getElementById('gotoToday').onclick = ()=> gotoDate(new Date());
 document.getElementById('gotoYesterday').onclick = ()=> gotoDate(new Date(Date.now()-86400000));
 
