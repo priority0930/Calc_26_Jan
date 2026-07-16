@@ -625,8 +625,8 @@ function migrateOldSchemaIfNeeded(){
     const oldData = snap.val();
     if(!oldData) return;
     return fbDb.ref(FB_ROOT).once('value').then(newSnap=>{
-      if(newSnap.val()) return; // 새 경로에 이미 데이터가 있으면 건드리지 않음
-      const migrated = {};
+      const existing = newSnap.val() || {};
+      const updates = {};
       Object.keys(oldData).forEach(weekKey=>{
         const sunday = keyToDate(weekKey);
         const dayObj = oldData[weekKey] || {};
@@ -636,10 +636,14 @@ function migrateOldSchemaIfNeeded(){
           const actualDate = new Date(sunday);
           actualDate.setDate(actualDate.getDate()+dayIdx);
           const dateKey = fmtKey(actualDate);
-          migrated[dateKey] = Object.assign({}, migrated[dateKey], dayObj[dayIdxStr]);
+          // 이미 새 스키마에 해당 날짜 데이터가 있으면 그대로 두고, 없는 날짜만 채워 넣는다
+          Object.keys(dayObj[dayIdxStr]).forEach(uid=>{
+            if(existing[dateKey] && existing[dateKey][uid]) return;
+            updates[FB_ROOT+'/'+dateKey+'/'+uid] = dayObj[dayIdxStr][uid];
+          });
         });
       });
-      if(Object.keys(migrated).length) return fbDb.ref(FB_ROOT).set(migrated);
+      if(Object.keys(updates).length) return fbDb.ref().update(updates);
     });
   }).catch(e=> console.warn('구버전 데이터 이전 실패', e));
 }
@@ -937,7 +941,7 @@ function buildCard(u, ud){
     b.className = 'type-btn'+(ud.type===t?' selected':'');
     b.textContent = t==='running' ? '🏃 러닝' : '🏋️ 헬스';
     b.disabled = !isMine;
-    b.onclick = ()=>{ ud.type = (ud.type===t? null : t); commit(u.id); renderCards(); renderDayTabs(); };
+    b.onclick = ()=>{ ud.type = t; commit(u.id); renderCards(); renderDayTabs(); };
     toggle.appendChild(b);
   });
   step1.appendChild(toggle);
@@ -1060,7 +1064,7 @@ function buildCard(u, ud){
     b.className = 'finish-btn '+key+(ud.result===key?' active':'');
     b.textContent = label;
     b.disabled = !isMine;
-    b.onclick = ()=>{ ud.result = (ud.result===key? null : key); commit(u.id); renderCards(); renderDayTabs(); };
+    b.onclick = ()=>{ ud.result = key; commit(u.id); renderCards(); renderDayTabs(); };
     frow.appendChild(b);
   });
   finish.appendChild(frow);
@@ -1075,7 +1079,7 @@ function buildCard(u, ud){
     c.className = 'score-chip'+(ud.score===n?' selected':'');
     c.textContent = n;
     c.disabled = !isMine;
-    c.onclick = ()=>{ ud.score = (ud.score===n? null : n); commit(u.id); renderCards(); };
+    c.onclick = ()=>{ ud.score = n; commit(u.id); renderCards(); };
     chips.appendChild(c);
   }
   scoreRow.appendChild(chips);
